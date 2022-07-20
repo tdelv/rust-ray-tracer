@@ -100,37 +100,39 @@ fn build_real_time(input: &PathBuf, output: &PathBuf) -> ConfigResult<()> {
 
     let (mut raw, mut config) = get_config(input, None)?.unwrap();
     let mut result = empty_result(&config);
-    for it in 1.. {
-        message!("\rIter #{}", it);
-        std::io::stdout().flush().map_err(ConfigError::IOError)?;
+    let start_time = std::time::Instant::now();
+    loop {
+        for it in 1.. {
+            message!("\rIter #{}; Time {:?}", it, start_time.elapsed());
+            std::io::stdout().flush().map_err(ConfigError::IOError)?;
 
-        {
-            let new = make_image(&config);
-            for x in 0..(config.width as usize) {
-                for y in 0..(config.height as usize) {
-                    result[y][x] = result[y][x] + new[y][x];
+            {
+                let new = make_image(&config);
+                for x in 0..(config.width as usize) {
+                    for y in 0..(config.height as usize) {
+                        result[y][x] = result[y][x] + new[y][x];
+                    }
+                }
+            }
+
+            {
+                let img = ImageBuffer::from_fn(config.width, config.height, |x, y| {
+                    let curr = result[y as usize][x as usize].scale(1.0 / (it as f64));
+                    Rgb([curr.x as u8, curr.y as u8, curr.z as u8])
+                });
+            
+                img.save(output).map_err(ConfigError::ImageError)?;
+            }
+
+            match get_config(input, Some(&raw))? {
+                None => (),
+                Some((new_raw, new_config)) => {
+                    raw = new_raw;
+                    config = new_config;
+                    result = empty_result(&config);
+                    break;
                 }
             }
         }
-
-        {
-            let img = ImageBuffer::from_fn(config.width, config.height, |x, y| {
-                let curr = result[y as usize][x as usize].scale(1.0 / (it as f64));
-                Rgb([curr.x as u8, curr.y as u8, curr.z as u8])
-            });
-        
-            img.save(output).map_err(ConfigError::ImageError)?;
-        }
-
-        match get_config(input, Some(&raw))? {
-            None => (),
-            Some((new_raw, new_config)) => {
-                raw = new_raw;
-                config = new_config;
-                result = empty_result(&config);
-            }
-        }
     }
-
-    Ok(())
 }
